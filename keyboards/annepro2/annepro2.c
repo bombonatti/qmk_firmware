@@ -20,6 +20,7 @@
 #include "spi_master.h"
 #include "ap2_led.h"
 #include "protocol.h"
+#include "timer.h"
 
 #define RAM_MAGIC_LOCATION 0x20001ffc
 #define IAP_MAGIC_VALUE 0x0000fab2
@@ -43,6 +44,21 @@ static const SerialConfig ble_uart_config = {
 static uint8_t led_mcu_wakeup[11] = {0x7b, 0x10, 0x43, 0x10, 0x03, 0x00, 0x00, 0x7d, 0x02, 0x01, 0x02};
 
 ble_capslock_t ble_capslock = {._dummy = {0}, .caps_lock = false};
+
+#ifdef AP2_LED_SLEEP_ENABLE
+uint32_t sleep_timer;
+int8_t ap2_is_asleep = 0;
+
+void ap2_sleep(void) {
+    ap2_is_asleep = 1;
+    ap2_led_disable();
+}
+
+void ap2_wake(void) {
+    ap2_led_enable();
+    ap2_is_asleep = 0;
+}
+#endif
 
 #ifdef RGB_MATRIX_ENABLE
 static uint8_t led_enabled = 1;
@@ -116,6 +132,12 @@ void matrix_scan_kb() {
     // read it into the capslock struct
     while (!sdGetWouldBlock(&SD1)) {
         sdReadTimeout(&SD1, (uint8_t *)&ble_capslock, sizeof(ble_capslock_t), 10);
+
+       if (ble_capslock.caps_lock) {
+            print("CAPSLOCK");
+            led_set(1 << USB_LED_CAPS_LOCK);
+        }
+
     }
 
     /* While there's data from LED keyboard sent - read it. */
@@ -124,6 +146,16 @@ void matrix_scan_kb() {
         proto_consume(&proto, byte);
     }
 
+#ifdef AP2_LED_SLEEP_ENABLE
+    /* If leds are enabled and we're not asleep - but should... */
+    if (ap2_led_status.matrix_enabled &&
+        ap2_is_asleep == 0 &&
+        timer_elapsed32(sleep_timer) >= SLEEP_TIME_AMOUNT)
+    {
+        rgb_matrix_disable();
+        ap2_sleep();
+    }
+#endif
 
     matrix_scan_user();
 }
@@ -133,6 +165,15 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
         if (ap2_led_status.matrix_enabled && ap2_led_status.is_reactive) {
             ap2_led_forward_keypress(record->event.key.row, record->event.key.col);
         }
+
+#ifdef AP2_LED_SLEEP_ENABLE
+        /* Reset sleep timer */
+        sleep_timer = timer_read32();
+        if (ap2_is_asleep) {
+            ap2_wake();
+            rgb_matrix_enable();
+        }
+#endif
 
         const ap2_led_t blue = {
             .p.blue  = 0xff,

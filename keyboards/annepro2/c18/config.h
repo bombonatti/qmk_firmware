@@ -42,6 +42,10 @@
 // Obins stock firmware has something similar to this already enabled, but disabled by default in QMK
 #define PERMISSIVE_HOLD
 
+// Enable sleep mode
+#define AP2_LED_SLEEP_ENABLE 1
+#define SLEEP_TIME_AMOUNT (60 * 1000)
+
 // SPI configuration
 #define SPI_DRIVER SPID1
 #define SPI_SCK_PIN A0
